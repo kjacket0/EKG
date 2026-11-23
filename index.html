@@ -643,12 +643,12 @@ function render(){
   const act=document.activeElement,key=act&&act.dataset&&act.dataset.act?act.dataset.act+'|'+(act.dataset.arg||''):null;
   const y=window.scrollY;
   app.innerHTML=
-  '<header><div><h1>Rhythm Venn</h1><p class="sub">See which clues up to six rhythms share, and the one check that splits them. Built from your IHCC Fall 2026 EKG files.</p></div>'+
+  '<header><div><h1>Rhythm Venn</h1><p class="sub">See which clues up to six rhythms share, and the one check that splits them.</p></div>'+
   '<div class="hr">'+themeHTML()+'<svg class="trace" viewBox="0 0 150 44" aria-hidden="true"><path d="M0 28H26L31 24L36 28H52L57 32L63 4L70 40L75 28H96C100 20 108 20 112 28H150"/></svg></div></header>'+
   '<div class="steps" aria-label="Five-step method"><span><b>1</b>Regularity</span><span><b>2</b>Rate</span><span><b>3</b>P waves</span><span><b>4</b>PR interval</span><span><b>5</b>QRS</span></div>'+
   '<div class="tabs" role="tablist"><button class="tab" role="tab" data-act="tab" data-arg="compare" aria-selected="'+(state.tab==='compare')+'">Venn</button><button class="tab" role="tab" data-act="tab" data-arg="narrow" aria-selected="'+(state.tab==='narrow')+'">Narrow down</button></div>'+
   (state.tab==='compare'?compareHTML():narrowHTML())+
-  '<footer>Sources: Wk 3–12 lecture slides, Wk 4, 8, 9 and 10 notes, the Basic EKG Interpretation Algorithm deck and the EKG Rhythm Graphic. Where they disagree, the lecture slides win and the rhythm card says so. Study aid, not for clinical decisions.</footer>';
+  '<footer>Intended as a study aid. Not for clinical decisions.</footer>';
   if(state.tab==='compare')drawCompare();
   window.scrollTo(0,y);
   if(key){const el=app.querySelector('[data-act="'+key.split('|')[0]+'"][data-arg="'+(key.split('|')[1]||'')+'"]');if(el)el.focus({preventScroll:true});}
