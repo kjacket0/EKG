@@ -1,6 +1,6 @@
 /* Rhythm Venn service worker: works offline after the first visit.
    Bump CACHE when you want every device to drop old files. */
-const CACHE = 'rhythm-venn-v1';
+const CACHE = 'rhythm-venn-v2';
 const CORE = [
   './',
   './index.html',
