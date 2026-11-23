@@ -69,6 +69,9 @@ h1{margin:0;font:700 clamp(34px,8vw,52px)/.95 var(--display);letter-spacing:.02e
 .chip{border:1px solid var(--line);background:var(--surface2);border-radius:999px;padding:5px 12px;font-weight:500;display:inline-flex;align-items:center;gap:6px;min-height:32px}
 .chip[aria-pressed="true"]{border-color:var(--fg);background:var(--surface);box-shadow:inset 0 0 0 1px var(--fg)}
 .chip.dim{opacity:.4}
+.chip.zb:not([aria-pressed="true"]){background:var(--zb)}
+.chip.zn:not([aria-pressed="true"]){background:var(--zn)}
+.chip.zt:not([aria-pressed="true"]){background:var(--zt)}
 .chip .n{font:500 11px var(--mono);color:var(--muted)}
 .sw{width:11px;height:11px;border-radius:50%;flex:none;display:inline-block}
 .s0{background:var(--sa)}.s1{background:var(--sb)}.s2{background:var(--sc)}.s3{background:var(--sd)}.s4{background:var(--se)}.s5{background:var(--sf)}
@@ -140,7 +143,7 @@ footer{color:var(--muted);font-size:13px}
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const CATS=[
  {id:'reg',label:'Regularity',pill:'REG',q:'Regular or irregular?'},
- {id:'rate',label:'Rate',pill:'RATE',q:'How fast?'},
+ {id:'rate',label:'Rate',pill:'RATE',q:'How fast? (bpm)'},
  {id:'p',label:'P waves',pill:'P',q:'One per QRS? Before or after? Same shape?'},
  {id:'pr',label:'PR interval',pill:'PRI',q:'Normal, long, changing?'},
  {id:'qrs',label:'QRS',pill:'QRS',q:'Narrow or wide?'},
@@ -315,6 +318,22 @@ const T={
 'apace|vpace':'Atrial paced: spike then P. Ventricular paced: spike then a wide QRS.'
 };
 function tipFor(a,b){return T[a+'|'+b]||T[b+'|'+a]||'';}
+/* Narrow-down rate filter: linear bands (bpm). z = zone tint. */
+const BANDS=[
+ {id:'b20',short:'20–40',long:'20–40 bpm (also covers rates under 20)',z:'b'},
+ {id:'b40',short:'41–59',long:'41–59 bpm',z:'b'},
+ {id:'b60',short:'60–100',long:'60–100 bpm',z:'n'},
+ {id:'b100',short:'101–159',long:'101–159 bpm',z:'t'},
+ {id:'b160',short:'160+',long:'160 bpm and up',z:'t'}];
+/* Bands each rhythm can run in, from your slides. 'any' = follows the underlying rhythm or is not given; [] = no measurable rate. */
+const BANDMAP={
+ nsr:'b60',sbrady:'b20 b40',stachy:'b100',sarr:'b60',
+ afib:'b20 b40 b60 b100 b160',aflutter:'b100 b160',atach:'b100 b160',wap:'b60',mat:'b100 b160',pac:'any',
+ pjc:'any',jescape:'b20 b40',ajr:'b60',jtach:'b100 b160',svt:'b100 b160',
+ pvc:'any',vt:'b100 b160',torsades:'any',vfib:'',idio:'b20',asystole:'',
+ avb1:'any',wenck:'b40 b60',mobitz2:'b20 b40',chb:'b20 b40',
+ sblock:'any',spause:'any',apace:'any',vpace:'any',avpace:'any'};
+R.forEach(r=>{const b=BANDMAP[r.id];if(b===undefined)console.error('no bands',r.id);r.bands=b==='any'?'any':b.split(' ').filter(Boolean);});
 const MAX=6,SC=['sa','sb','sc','sd','se','sf'];
 const mctx=document.createElement('canvas').getContext('2d');
 function tw(txt,font){mctx.font=font;return mctx.measureText(txt).width;}
@@ -590,22 +609,32 @@ function drawCompare(){
 }
 
 /* ---------- Narrow-down tab ---------- */
-function matches(except){
-  return R.filter(r=>CATS.every(c=>{if(c.id===except)return true;const s=state.f[c.id];return !s.size||[...s].some(a=>r.atoms.has(a));}));
+function passCat(r,c){
+  const s=state.f[c];if(!s.size)return true;
+  if(c==='rate')return r.bands==='any'||[...s].some(b=>r.bands.includes(b));
+  return [...s].some(a=>r.atoms.has(a));
 }
+function matches(except){return R.filter(r=>CATS.every(c=>c.id===except||passCat(r,c.id)));}
+const hasBand=(r,id)=>r.bands!=='any'&&r.bands.includes(id);
 function nextClue(c){
   if(c.length<2)return null;let best=null;
   for(const cat of CATS){
     if(state.f[cat.id].size)continue;
     const rows=[];let bal=0;
-    ATOMS.filter(a=>a.cat===cat.id).forEach(a=>{const k=c.filter(r=>r.atoms.has(a.id)).length;
+    const ats=cat.id==='rate'?BANDS.map(b=>Object.assign({cat:'rate',band:true},b)):ATOMS.filter(a=>a.cat===cat.id);
+    ats.forEach(a=>{const k=c.filter(r=>a.band?hasBand(r,a.id):r.atoms.has(a.id)).length;
       if(k>0&&k<c.length){rows.push({a,k});bal=Math.max(bal,Math.min(k,c.length-k));}});
     if(bal>0&&(!best||bal>best.bal))best={cat,rows,bal};
   }
   if(best)best.rows.sort((x,y)=>Math.abs(x.k-c.length/2)-Math.abs(y.k-c.length/2));
   return best;
 }
+function bandChip(b){
+  const on=state.f.rate.has(b.id),k=matches('rate').filter(r=>hasBand(r,b.id)).length;
+  return '<button class="chip z'+b.z+(k===0&&!on?' dim':'')+'" data-act="band" data-arg="'+b.id+'" aria-pressed="'+on+'" title="'+esc(b.long)+'">'+esc(b.short)+' <span class="n">'+k+'</span></button>';
+}
 function filterChip(a){
+  if(a.band)return bandChip(a);
   const cat=A[a.id].cat,on=state.f[cat].has(a.id);
   const k=matches(cat).filter(r=>r.atoms.has(a.id)).length;
   return '<button class="chip'+(k===0&&!on?' dim':'')+'" data-act="filt" data-arg="'+a.id+'" aria-pressed="'+on+'">'+esc(a.short)+' <span class="n">'+k+'</span></button>';
@@ -615,15 +644,17 @@ function narrowHTML(){
   const any=CATS.some(x=>state.f[x.id].size);
   let steps='';
   CATS.forEach((cat,i)=>{
-    const chips=ATOMS.filter(a=>a.cat===cat.id).map(filterChip).join('');
+    const chips=cat.id==='rate'?BANDS.map(bandChip).join(''):ATOMS.filter(a=>a.cat===cat.id).map(filterChip).join('');
     if(cat.id==='x')steps+='<details data-open="xclues"'+(state.open.has('xclues')?' open':'')+'><summary>Other clues (optional)</summary><div class="row" style="margin-top:8px">'+chips+'</div></details>';
-    else steps+='<div class="step"><h3><b>'+(i+1)+'</b>'+cat.label+'<i>'+cat.q+'</i></h3><div class="row">'+chips+'</div></div>';
+    else steps+='<div class="step"><h3><b>'+(i+1)+'</b>'+cat.label+'<i>'+cat.q+'</i></h3><div class="row">'+chips+'</div>'+(cat.id==='rate'&&state.f.rate.size?'<p class="hint" style="margin:6px 0 0;font-size:13px">Single beats, 1° block, pauses and paced rhythms follow the underlying rate, so they stay in the list.</p>':'')+'</div>';
   });
-  const cards=c.length?GROUPS.map(g=>{const rs=c.filter(r=>r.group===g);if(!rs.length)return '';
+  const rf=state.f.rate.size,main=rf?c.filter(r=>r.bands!=='any'):c,anyRate=rf?c.filter(r=>r.bands==='any'):[];
+  const listBy=list=>GROUPS.map(g=>{const rs=list.filter(r=>r.group===g);if(!rs.length)return '';
     return '<p class="lbl" style="margin-top:10px">'+esc(g)+'</p>'+rs.map(r=>{
       const on=state.sel.includes(r.id);
       const byCat=CATS.map(ct=>{const ids=[...r.atoms].filter(a=>A[a].cat===ct.id);return ids.length?ids:null;}).filter(Boolean).map(ids=>ids.map(a=>'<li>'+pillOf(a)+'<span>'+esc(A[a].long)+'</span></li>').join('')).join('');
-      return '<details data-open="r_'+r.id+'"'+(state.open.has('r_'+r.id)?' open':'')+'><summary><span class="sum-r">'+esc(r.name)+' <span class="tagg">'+esc(r.rateText.split(';')[0].split('(')[0].trim()||'')+'</span></span><button class="mini" data-act="pick" data-arg="'+r.id+'" aria-pressed="'+on+'">'+(on?'In Venn':'+ Venn')+'</button></summary><ul class="at">'+byCat+'</ul>'+(r.note?'<p class="hint" style="margin:8px 0 0">'+esc(r.note)+'</p>':'')+'</details>';}).join('');}).join(''):'<p class="hint">No rhythm in your notes has all of these. Clear one filter.</p>';
+      return '<details data-open="r_'+r.id+'"'+(state.open.has('r_'+r.id)?' open':'')+'><summary><span class="sum-r">'+esc(r.name)+' <span class="tagg">'+esc(r.rateText.split(';')[0].split('(')[0].trim()||'')+'</span></span><button class="mini" data-act="pick" data-arg="'+r.id+'" aria-pressed="'+on+'">'+(on?'In Venn':'+ Venn')+'</button></summary><ul class="at">'+byCat+'</ul>'+(r.note?'<p class="hint" style="margin:8px 0 0">'+esc(r.note)+'</p>':'')+'</details>';}).join('');}).join('');
+  const cards=c.length?(listBy(main)+(anyRate.length?'<p class="lbl" style="margin-top:18px">Rate follows the underlying rhythm</p><p class="hint" style="margin:0 0 4px;font-size:13px">These can occur at any rate, so the rate filter does not rule them out.</p>'+listBy(anyRate):'')):'<p class="hint">No rhythm in your notes has all of these. Clear one filter.</p>';
   return '<div class="card"><div class="bar"><h2 style="margin:0">Narrow it down</h2>'+(any?'<button class="btn ghost" data-act="clear">Clear</button>':'')+'</div><p class="hint" style="margin:6px 0 12px">Tap clues you see on the strip. Within a step, tapping two means either. Numbers show how many rhythms match.</p>'+steps+'</div>'+
   '<div class="card"><div class="bar"><h2 style="margin:0">'+c.length+' of '+R.length+' rhythms match</h2>'+(c.length>=2&&c.length<=6?'<button class="btn ghost" data-act="cmpset" data-arg="x">Compare these '+c.length+'</button>':'')+'<button class="btn" data-act="tab" data-arg="compare">Open Venn ('+state.sel.length+')</button></div>'+
    (nc?'<div class="next" style="margin-top:10px"><p class="lbl" style="color:var(--fg)">Best next check: '+nc.cat.label+'</p><div class="row">'+nc.rows.slice(0,8).map(r=>filterChip(r.a)).join('')+'</div></div>':(c.length>1?'<p class="hint" style="margin-top:8px">Nothing in your notes separates these further.</p>':''))+
@@ -664,6 +695,7 @@ app.addEventListener('click',e=>{
   const a=t.dataset.act,v=t.dataset.arg;
   if(a==='tab')state.tab=v;
   else if(a==='theme')applyTheme(effTheme()==='dark'?'light':'dark');
+  else if(a==='band'){const s=state.f.rate;s.has(v)?s.delete(v):s.add(v);}
   else if(a==='pick')pick(v);
   else if(a==='grp')state.grp=v;
   else if(a==='region')state.region=+v;
